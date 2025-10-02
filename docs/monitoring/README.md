@@ -1,6 +1,6 @@
 # Observability and Monitoring in llm-d
 
-Please join [SIG-Observability](https://github.com/llm-d/llm-d/main/dev/SIGS.md#sig-observability) to contribute to monitoring and observability topics within llm-d.
+Please join [SIG-Observability](https://github.com/llm-d/llm-d/blob/main/SIGS.md#sig-observability) to contribute to monitoring and observability topics within llm-d.
 
 ## Enable Metrics Collection in llm-d Deployments
 
