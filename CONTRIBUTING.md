@@ -84,7 +84,7 @@ For changes that fix broken code or add small changes within a component:
   - Enough detail for someone reviewing git history to understand the scope
 - **DCO Sign-off**: All commits must include a valid DCO sign-off line (`Signed-off-by: Name <email@domain.com>`)
   - Add automatically with `git commit -s`
-  - See [PR_SIGNOFF.md](https://github.com/llm-d/llm-d/blob/dev/PR_SIGNOFF.md) for configuration details
+  - See [PR_SIGNOFF.md](https://github.com/llm-d/llm-d/blob/main/PR_SIGNOFF.md) for configuration details
   - Required for all contributions per [Developer Certificate of Origin](https://developercertificate.org/)
 
 ## Code Organization and Ownership
