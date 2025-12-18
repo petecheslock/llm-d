@@ -418,9 +418,9 @@ wait_for_deployment() {
     # Wait for Gateway (using component label, not name)
     wait_for_pods "$NAMESPACE" "app.kubernetes.io/component=inference-gateway" 1 300
 
-    # Wait for model service pods (2 replicas, 2 containers each)
-    log_info "Waiting for model service pods (this is the slow part - model loading + compilation)..."
-    wait_for_pods "$NAMESPACE" "llm-d.ai/inferenceServing=true" 2 600
+    # Wait for model service pod (1 replica, 2 containers)
+    log_info "Waiting for model service pod (this is the slow part - model loading + compilation)..."
+    wait_for_pods "$NAMESPACE" "llm-d.ai/inferenceServing=true" 1 600
 
     log_success "All pods are ready!"
 }

@@ -1,22 +1,20 @@
 # Guide: CPU Inference Scheduling on Apple Silicon
 
-## ✅ Status: Fully Operational
-
 **Last Updated**: December 17, 2025
 
 This guide provides a **complete, working deployment** of llm-d intelligent inference scheduling using CPU-only vLLM on Apple Silicon (ARM64) Macs. All known issues have been resolved.
 
 ### What's Working ✅
 
-- **Podman Machine**: 24GB RAM, 8 CPUs, 100GB disk - sized for 2 replica deployment
+- **Podman Machine**: 24GB RAM, 8 CPUs, 100GB disk - ample capacity for demo and testing
 - **Kind Cluster**: Local Kubernetes with Gateway API and Istio
 - **ARM64 Images**: Locally built routing sidecar and EPP for Apple Silicon
 - **Prometheus Stack**: Full monitoring with ServiceMonitor/PodMonitor
-- **2 vLLM Replicas**: Running Qwen2-0.5B-Instruct with 6Gi memory each
+- **1 vLLM Replica**: Running Qwen2-0.5B-Instruct with 8Gi memory and 4 CPUs
 - **Intelligent Routing**: EPP load-aware and prefix-cache aware scheduling
 - **HTTPRoute**: Gateway → InferencePool → vLLM backends
 - **Inference Requests**: `/v1/chat/completions` and `/v1/models` fully functional
-- **Metrics Collection**: Prometheus scraping vLLM metrics from both replicas
+- **Metrics Collection**: Prometheus scraping vLLM metrics from the replica
 
 ### Architecture Overview
 
@@ -26,20 +24,20 @@ This guide provides a **complete, working deployment** of llm-d intelligent infe
 │  ┌────────────────────────────────────────────────────────┐  │
 │  │  Kind Cluster (llm-d-cpu)                              │  │
 │  │  ┌──────────────────────────────────────────────────┐  │  │
-│  │  │  Namespace: llm-d-cpu-inference                   │  │  │
-│  │  │                                                    │  │  │
-│  │  │  ┌──────────────┐                                 │  │  │
-│  │  │  │ Istio        │  :80                            │  │  │
-│  │  │  │ Gateway      │────┐                            │  │  │
-│  │  │  └──────────────┘    │                            │  │  │
-│  │  │                      │ HTTPRoute                  │  │  │
-│  │  │  ┌──────────────┐    │                            │  │  │
-│  │  │  │ EPP          │◄───┘                            │  │  │
-│  │  │  │ (Gateway API │  InferencePool                  │  │  │
-│  │  │  │  Inference   │  Selector                       │  │  │
-│  │  │  │  Extension)  │◄───────────────┐                │  │  │
-│  │  │  └──────────────┘                │                │  │  │
-│  │  │                                  │                │  │  │
+│  │  │  Namespace: llm-d-cpu-inference                  │  │  │
+│  │  │                                                  │  │  │
+│  │  │  ┌──────────────┐                                │  │  │
+│  │  │  │ Istio        │  :80                           │  │  │
+│  │  │  │ Gateway      │────┐                           │  │  │
+│  │  │  └──────────────┘    │                           │  │  │
+│  │  │                      │ HTTPRoute                 │  │  │
+│  │  │  ┌──────────────┐    │                           │  │  │
+│  │  │  │ EPP          │◄───┘                           │  │  │
+│  │  │  │ (Gateway API │  InferencePool                 │  │  │
+│  │  │  │  Inference   │  Selector                      │  │  │
+│  │  │  │  Extension)  │◄───────────────┐               │  │  │
+│  │  │  └──────────────┘                │               │  │  │
+│  │  │                                  │               │  │  │
 │  │  │  ┌───────────────────────────┐  │                │  │  │
 │  │  │  │ Model Service Pod 1       │  │                │  │  │
 │  │  │  │ ┌──────────────────────┐  │  │                │  │  │
@@ -50,12 +48,12 @@ This guide provides a **complete, working deployment** of llm-d intelligent infe
 │  │  │  │ │ vLLM Container       │  │  │ llm-d.ai/      │  │  │
 │  │  │  │ │ - Qwen2-0.5B        │◄─┼──┘ inferenceServing│  │  │
 │  │  │  │ │ - CPU mode           │  │    = "true"       │  │  │
-│  │  │  │ │ - 6Gi memory         │  │                   │  │  │
-│  │  │  │ │ - 3 CPUs             │  │                   │  │  │
+│  │  │  │ │ - 8Gi memory         │  │                   │  │  │
+│  │  │  │ │ - 4 CPUs             │  │                   │  │  │
 │  │  │  │ │ - Port 8200          │  │                   │  │  │
 │  │  │  │ └──────────────────────┘  │                   │  │  │
 │  │  │  └───────────────────────────┘                   │  │  │
-│  │  │                                                   │  │  │
+│  │  │                                                  │  │  │
 │  │  │  ┌───────────────────────────┐                   │  │  │
 │  │  │  │ Model Service Pod 2       │                   │  │  │
 │  │  │  │ ┌──────────────────────┐  │                   │  │  │
@@ -64,14 +62,14 @@ This guide provides a **complete, working deployment** of llm-d intelligent infe
 │  │  │  │ └──────────────────────┘  │                   │  │  │
 │  │  │  │ ┌──────────────────────┐  │                   │  │  │
 │  │  │  │ │ vLLM Container       │  │                   │  │  │
-│  │  │  │ │ - Qwen2-0.5B        │◄─┼───────────────────┘  │  │
+│  │  │  │ │ - Qwen2-0.5B         │◄─┼───────────────────┘  │  │
 │  │  │  │ │ - CPU mode           │  │                      │  │
-│  │  │  │ │ - 6Gi memory         │  │                      │  │
-│  │  │  │ │ - 3 CPUs             │  │                      │  │
+│  │  │  │ │ - 8Gi memory         │  │                      │  │
+│  │  │  │ │ - 4 CPUs             │  │                      │  │
 │  │  │  │ │ - Port 8200          │  │                      │  │
 │  │  │  │ └──────────────────────┘  │                      │  │
 │  │  │  └───────────────────────────┘                      │  │
-│  │  │                                                      │  │
+│  │  │                                                     │  │
 │  │  │  ┌──────────────────────────────────┐               │  │
 │  │  │  │ Prometheus + Grafana             │               │  │
 │  │  │  │ (llm-d-monitoring namespace)     │               │  │
@@ -85,14 +83,14 @@ This guide provides a **complete, working deployment** of llm-d intelligent infe
 
 **Minimum Requirements** (for this guide):
 - **Apple Silicon Mac** (M1/M2/M3/M4 series)
-- **24GB RAM** (for podman machine running 2 replicas × 6Gi)
+- **24GB RAM** (for podman machine with ample capacity)
 - **100GB free disk space** (for podman machine, images, and models)
-- **8 CPU cores** (for 2 replicas × 3 CPUs each)
+- **8 CPU cores** (for smooth operation and headroom)
 
 **Tested Configuration**:
 - MacBook with 36GB RAM
 - Podman machine: 24GB RAM, 8 CPUs, 100GB disk
-- 2 vLLM decode replicas running Qwen2-0.5B-Instruct
+- 1 vLLM decode replica running Qwen2-0.5B-Instruct
 
 ## Quick Start
 
@@ -171,7 +169,7 @@ curl -s http://localhost:8000/v1/chat/completions \
 
 ### Monitor Routing Behavior
 
-Send multiple requests and watch EPP route between 2 replicas:
+Send multiple requests to the vLLM replica:
 
 ```bash
 # Send 10 requests
@@ -213,8 +211,8 @@ This deployment succeeds where previous attempts failed due to these critical fa
 
 #### 1. Sufficient Podman Machine Resources
 
-**Problem**: Initial 8GB RAM was insufficient for 2 replicas
-**Solution**: 24GB RAM allows 2 × 6Gi replicas + Kubernetes overhead
+**Problem**: Initial 8GB RAM was insufficient for the replica
+**Solution**: 24GB RAM provides ample capacity for the replica + Kubernetes overhead + headroom
 
 ```bash
 # Working configuration
@@ -510,7 +508,7 @@ Using **Qwen2-0.5B-Instruct** (0.5B parameters, ~2GB):
 - Instruction-tuned for chat/completion tasks
 - Supports `/v1/chat/completions` endpoint
 - Public model (no HuggingFace token required)
-- Small enough for 6Gi memory limit with 2GB KV cache
+- Fits well in 8Gi memory limit with generous KV cache space
 
 Key vLLM parameters:
 ```bash
@@ -522,21 +520,21 @@ Key vLLM parameters:
 
 ### Resource Allocation
 
-**Per Pod** (2 replicas):
+**Per Pod** (1 replica):
 ```yaml
 resources:
   limits:
-    memory: 6Gi   # Model (2Gi) + KV cache (2Gi) + overhead (2Gi)
-    cpu: "3"      # 3 CPUs per pod
+    memory: 8Gi   # Model (2Gi) + KV cache + overhead
+    cpu: "4"      # 4 CPUs per pod
   requests:
     cpu: "500m"   # Minimal for scheduling
     memory: 1Gi   # Minimal for scheduling
 ```
 
-**Total Resources** (2 replicas):
-- Memory: 12Gi (2 × 6Gi)
-- CPU: 6 cores (2 × 3)
-- Fits comfortably in 24GB podman machine with 8 CPUs
+**Total Resources** (1 replica):
+- Memory: ~8Gi (vLLM container + minimal sidecar overhead)
+- CPU: ~4 cores (vLLM container + minimal sidecar overhead)
+- Fits comfortably in 24GB podman machine with 8 CPUs and leaves plenty of headroom
 
 ### Environment Variables
 

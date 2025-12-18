@@ -24,7 +24,7 @@ routing:
 
 decode:
   create: true
-  replicas: 2 
+  replicas: 1 
   monitoring:
     podmonitor:
       enabled: true
@@ -73,8 +73,8 @@ decode:
         protocol: TCP
     resources:
       limits:
-        memory: 6Gi   # 2 replicas x 6Gi = 12Gi total (podman has 24Gi)
-        cpu: "3"      # 3 CPUs per pod (podman has 8 CPUs)
+        memory: 8Gi
+        cpu: "4"
       requests:
         cpu: "500m"   # Minimal request for scheduling
         memory: 1Gi   # Minimal memory request
