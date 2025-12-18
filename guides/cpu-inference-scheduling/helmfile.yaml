@@ -1,0 +1,48 @@
+repositories:
+  - name: llm-d-modelservice
+    url: https://llm-d-incubation.github.io/llm-d-modelservice/
+  - name: llm-d-infra
+    url: https://llm-d-incubation.github.io/llm-d-infra/
+
+releases:
+  # Infrastructure release (Istio gateway)
+  - name: infra-cpu-inference
+    namespace: llm-d-cpu-inference
+    chart: llm-d-infra/llm-d-infra
+    version: v1.3.4
+    installed: true
+    labels:
+      type: infrastructure
+      kind: inference-stack
+
+  # Gateway API Inference Extension (EPP)
+  - name: gaie-cpu-inference
+    namespace: llm-d-cpu-inference
+    chart: oci://registry.k8s.io/gateway-api-inference-extension/charts/inferencepool
+    version: v1.2.0-rc.1
+    installed: true
+    needs:
+      - infra-cpu-inference
+    values:
+      - gaie-inference-scheduling/values.yaml
+      - provider:
+          name: istio
+          istio:
+            destinationRule:
+              host: gaie-cpu-inference-epp.llm-d-cpu-inference.svc.cluster.local
+    labels:
+      kind: inference-stack
+
+  # Model Service
+  - name: ms-cpu-inference
+    namespace: llm-d-cpu-inference
+    chart: llm-d-modelservice/llm-d-modelservice
+    version: v0.3.8
+    installed: true
+    needs:
+      - infra-cpu-inference
+      - gaie-cpu-inference
+    values:
+      - ms-inference-scheduling/values.yaml
+    labels:
+      kind: inference-stack

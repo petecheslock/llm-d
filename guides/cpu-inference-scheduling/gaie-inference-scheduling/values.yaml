@@ -1,0 +1,24 @@
+inferenceExtension:
+  replicas: 1
+  flags:
+    kv-cache-usage-percentage-metric: "vllm:kv_cache_usage_perc"
+  image:
+    name: gateway-api-inference-extension-epp
+    hub: localhost
+    tag: v1.2.0-rc.1-arm64
+    pullPolicy: IfNotPresent
+  extProcPort: 9002
+  pluginsConfigFile: "default-plugins.yaml"
+  monitoring:
+    interval: "10s"
+    prometheus:
+      enabled: true
+      auth:
+        enabled: true
+inferencePool:
+  apiVersion: inference.networking.x-k8s.io/v1alpha2
+  targetPortNumber: 8000
+  modelServerType: vllm
+  modelServers:
+    matchLabels:
+      llm-d.ai/inferenceServing: "true"
