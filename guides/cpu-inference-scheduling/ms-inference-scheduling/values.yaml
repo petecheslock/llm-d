@@ -24,7 +24,7 @@ routing:
 
 decode:
   create: true
-  replicas: 1 
+  replicas: 2 
   monitoring:
     podmonitor:
       enabled: true
