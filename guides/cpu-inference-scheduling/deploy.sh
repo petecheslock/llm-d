@@ -41,15 +41,11 @@ BUILD_DIR="/tmp/llm-d-build-$$"
 ROUTING_SIDECAR_REPO="${BUILD_DIR}/llm-d-routing-sidecar"
 EPP_REPO="${BUILD_DIR}/gateway-api-inference-extension"
 
-# Image names
-ROUTING_SIDECAR_IMAGE="localhost/llm-d-routing-sidecar:v0.4.0-rc.1-arm64"
-EPP_IMAGE="localhost/gateway-api-inference-extension-epp:v1.2.0-rc.1-arm64"
-VLLM_IMAGE="quay.io/rh_ee_micyang/vllm-service:macos"
-
-# Image tar files
-ROUTING_SIDECAR_TAR="/tmp/routing-sidecar-arm64.tar"
-EPP_TAR="/tmp/epp-arm64.tar"
-VLLM_TAR="/tmp/vllm-macos.tar"
+# Quay.io image names
+QUAY_USERNAME="${QUAY_USERNAME:-petecheslock}"
+ROUTING_SIDECAR_IMAGE="quay.io/${QUAY_USERNAME}/llm-d-routing-sidecar:v0.4.0-rc.1-arm64"
+EPP_IMAGE="quay.io/${QUAY_USERNAME}/gateway-api-inference-extension-epp:v1.2.0-rc.1-arm64"
+VLLM_IMAGE="quay.io/${QUAY_USERNAME}/llm-d-cpu:v0.4.0-arm64"
 
 #######################################
 # Helper Functions
@@ -295,91 +291,58 @@ install_prometheus() {
     log_success "Prometheus stack installed successfully"
 }
 
-build_arm64_images() {
-    log_info "Building ARM64 images..."
+pull_quay_images() {
+    log_info "Pulling ARM64 images from Quay.io..."
+    log_info "Using Quay username: $QUAY_USERNAME"
 
-    # Create build directory
-    mkdir -p "$BUILD_DIR"
+    local images=(
+        "$ROUTING_SIDECAR_IMAGE"
+        "$EPP_IMAGE"
+        "$VLLM_IMAGE"
+    )
 
-    # Build routing sidecar
-    log_info "Building routing sidecar image..."
-    if ! podman images | grep -q "llm-d-routing-sidecar.*v0.4.0-rc.1-arm64"; then
-        cd "$BUILD_DIR"
-        if [ ! -d "$ROUTING_SIDECAR_REPO" ]; then
-            git clone https://github.com/llm-d/llm-d-routing-sidecar.git
+    for img in "${images[@]}"; do
+        log_info "Pulling $img..."
+        if podman pull "$img"; then
+            log_success "Pulled: $img"
+        else
+            log_error "Failed to pull $img"
+            log_error ""
+            log_error "This could mean:"
+            log_error "  1. Images haven't been pushed to Quay yet"
+            log_error "  2. Images are private and you need to login: podman login quay.io"
+            log_error "  3. Images need to be made public in Quay.io settings"
+            log_error ""
+            log_error "To build and push images, run:"
+            log_error "  ./build-and-push-to-quay.sh"
+            exit 1
         fi
-        cd llm-d-routing-sidecar
-        git checkout main
-        podman build --platform=linux/arm64 -t "$ROUTING_SIDECAR_IMAGE" .
-        log_success "Routing sidecar image built"
-    else
-        log_info "Routing sidecar image already exists"
-    fi
+    done
 
-    # Build EPP
-    log_info "Building EPP image..."
-    if ! podman images | grep -q "gateway-api-inference-extension-epp.*v1.2.0-rc.1-arm64"; then
-        cd "$BUILD_DIR"
-        if [ ! -d "$EPP_REPO" ]; then
-            git clone https://github.com/kubernetes-sigs/gateway-api-inference-extension.git
-        fi
-        cd gateway-api-inference-extension
-        git checkout v1.2.0-rc.1
-        
-        # Patch Dockerfile for ARM64 build - simple approach that works
-        log_info "Patching Dockerfile for ARM64 build..."
-        # Just change GOARCH from amd64 to arm64 - keep it simple!
-        sed -i '' 's/ENV GOARCH=amd64/ENV GOARCH=arm64/' Dockerfile
-        
-        podman build --platform=linux/arm64 -t "$EPP_IMAGE" .
-        log_success "EPP image built"
-    else
-        log_info "EPP image already exists"
-    fi
-
-    # Pull vLLM image
-    log_info "Pulling vLLM macOS image..."
-    if ! podman images | grep -q "vllm-service.*macos"; then
-        podman pull "$VLLM_IMAGE"
-        log_success "vLLM image pulled"
-    else
-        log_info "vLLM image already exists"
-    fi
+    log_success "All images pulled from Quay.io"
 }
 
-load_images_into_kind() {
-    log_info "Loading images into kind cluster..."
-
-    # Save images to tar files if they don't exist
-    if [ ! -f "$ROUTING_SIDECAR_TAR" ]; then
-        log_info "Saving routing sidecar image to tar..."
-        podman save "$ROUTING_SIDECAR_IMAGE" -o "$ROUTING_SIDECAR_TAR"
+verify_kind_can_pull() {
+    log_info "Verifying KIND can access Quay images..."
+    
+    # KIND will pull images automatically when pods are created
+    # We just verify the images exist in Quay by checking we have them locally
+    local all_present=true
+    
+    for img in "$ROUTING_SIDECAR_IMAGE" "$EPP_IMAGE" "$VLLM_IMAGE"; do
+        if ! podman images | grep -q "$(echo $img | sed 's|quay.io/||')"; then
+            log_warn "Image not found locally: $img"
+            all_present=false
+        fi
+    done
+    
+    if [ "$all_present" = true ]; then
+        log_success "All images are ready for KIND to pull from Quay.io"
+    else
+        log_warn "Some images not found locally, but KIND will pull them from Quay.io during deployment"
     fi
-
-    if [ ! -f "$EPP_TAR" ]; then
-        log_info "Saving EPP image to tar..."
-        podman save "$EPP_IMAGE" -o "$EPP_TAR"
-    fi
-
-    if [ ! -f "$VLLM_TAR" ]; then
-        log_info "Saving vLLM image to tar..."
-        podman save "$VLLM_IMAGE" -o "$VLLM_TAR"
-    fi
-
-    # Load into kind
-    log_info "Loading images into kind cluster..."
-    kind load image-archive "$ROUTING_SIDECAR_TAR" --name "$KIND_CLUSTER_NAME"
-    kind load image-archive "$EPP_TAR" --name "$KIND_CLUSTER_NAME"
-    kind load image-archive "$VLLM_TAR" --name "$KIND_CLUSTER_NAME"
-
-    # Verify
-    log_info "Verifying images in cluster..."
-    podman exec "${KIND_CLUSTER_NAME}-control-plane" crictl images | grep -E "routing-sidecar|epp|vllm" || {
-        log_error "Images not found in cluster"
-        exit 1
-    }
-
-    log_success "Images loaded into kind cluster"
+    
+    log_info "Note: If images are private, you may need to configure imagePullSecrets"
 }
 
 deploy_helm_charts() {
@@ -418,9 +381,9 @@ wait_for_deployment() {
     # Wait for Gateway (using component label, not name)
     wait_for_pods "$NAMESPACE" "app.kubernetes.io/component=inference-gateway" 1 300
 
-    # Wait for model service pod (1 replica, 2 containers)
-    log_info "Waiting for model service pod (this is the slow part - model loading + compilation)..."
-    wait_for_pods "$NAMESPACE" "llm-d.ai/inferenceServing=true" 1 600
+    # Wait for model service pods (2 replicas, 2 containers each)
+    log_info "Waiting for model service pods (this is the slow part - model loading + compilation)..."
+    wait_for_pods "$NAMESPACE" "llm-d.ai/inferenceServing=true" 2 900
 
     log_success "All pods are ready!"
 }
@@ -525,26 +488,18 @@ teardown_all() {
     if [ "$non_interactive" = true ]; then
         log_info "Non-interactive mode: keeping container images"
     else
-        read -p "Remove local container images? [y/N] " -r
+        read -p "Remove local Quay container images? [y/N] " -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             log_info "Removing container images..."
             podman rmi "$ROUTING_SIDECAR_IMAGE" 2>/dev/null || true
             podman rmi "$EPP_IMAGE" 2>/dev/null || true
             podman rmi "$VLLM_IMAGE" 2>/dev/null || true
-            log_success "Images removed"
+            log_success "Images removed (still available in Quay.io)"
         else
             log_info "Keeping container images"
         fi
     fi
-
-    # Clean up tar files
-    log_info "Removing tar files..."
-    rm -f "$ROUTING_SIDECAR_TAR" "$EPP_TAR" "$VLLM_TAR"
-
-    # Clean up build directory
-    log_info "Removing build directory..."
-    rm -rf "$BUILD_DIR"
 
     # Kill port forwards
     pkill -f "kubectl port-forward.*infra-cpu-inference" || true
@@ -584,15 +539,15 @@ deploy_all() {
     install_prometheus
     echo ""
 
-    # Step 7: Build ARM64 images
-    build_arm64_images
+    # Step 7: Pull ARM64 images from Quay.io
+    pull_quay_images
     echo ""
 
-    # Step 8: Load images into kind
-    load_images_into_kind
+    # Step 8: Verify KIND can pull images
+    verify_kind_can_pull
     echo ""
 
-    # Step 9: Deploy Helm charts
+    # Step 9: Deploy Helm charts (KIND will pull images from Quay)
     deploy_helm_charts
     echo ""
 

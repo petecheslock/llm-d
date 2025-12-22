@@ -94,10 +94,21 @@ This guide provides a **complete, working deployment** of llm-d intelligent infe
 
 ## Quick Start
 
+### Prerequisites
+
+**Container Images:** This deployment uses pre-built ARM64 images from Quay.io:
+- `quay.io/petecheslock/llm-d-routing-sidecar:v0.4.0-rc.1-arm64`
+- `quay.io/petecheslock/gateway-api-inference-extension-epp:v1.2.0-rc.1-arm64`
+- `quay.io/petecheslock/llm-d-cpu:v0.4.0-arm64`
+
+These images must be available before deployment. If you need to build them yourself, see [Building Images](#pull-arm64-images-from-quayio).
+
+### Option 1: Full Automated Deployment (Recommended)
+
 Use the automated deployment script:
 
 ```bash
-# Deploy everything (podman, kind, images, helm charts)
+# Deploy everything (podman, kind, pull images, helm charts)
 ./deploy.sh
 
 # Tear down everything (prompts for confirmation before deleting podman machine/images)
@@ -107,15 +118,40 @@ Use the automated deployment script:
 ./deploy.sh --teardown --non-interactive
 ```
 
+The script will automatically pull images from Quay.io during deployment.
+
+### Option 2: Build Images Yourself
+
+If you want to build and push your own images to Quay:
+
+```bash
+# 1. Build and push to your Quay account
+export QUAY_USERNAME=your-username  # Change this
+./build-and-push-to-quay.sh
+
+# 2. Update image references in values.yaml files
+# Edit ms-inference-scheduling/values.yaml
+# Edit gaie-inference-scheduling/values.yaml
+# Change quay.io/petecheslock to quay.io/your-username
+
+# 3. Deploy
+./deploy.sh
+```
+
+### Option 3: Test Container Locally First
+
+Test the llm-d-cpu container locally before deploying to Kubernetes - see [Test a Container Locally](#test-a-container-locally-optional).
+
 The script handles:
 - ✅ Podman machine setup with resource validation (24GB RAM, 8 CPUs, 100GB disk)
 - ✅ Kind cluster deployment with experimental podman provider
 - ✅ Gateway API CRDs and GAIE CRDs installation
 - ✅ Istio installation via helmfile
 - ✅ Prometheus + Grafana stack with datasource configuration
-- ✅ Building ARM64 images locally (routing sidecar from main branch, EPP from v1.2.0-rc.1 tag)
-- ✅ Pulling vLLM macOS image (ARM64-compatible)
-- ✅ Loading all images into kind cluster
+- ✅ Pulling ARM64 images from Quay.io:
+  - `quay.io/petecheslock/llm-d-routing-sidecar:v0.4.0-rc.1-arm64`
+  - `quay.io/petecheslock/gateway-api-inference-extension-epp:v1.2.0-rc.1-arm64`
+  - `quay.io/petecheslock/llm-d-cpu:v0.4.0-arm64`
 - ✅ Deploying all Helm charts (infra, GAIE InferencePool, model service)
 - ✅ Creating HTTPRoute for request routing
 - ✅ Waiting for pods with proper label selectors
@@ -137,10 +173,11 @@ The `deploy.sh` script includes:
 - `./deploy.sh --teardown` - Interactive mode, prompts before deleting podman machine and images
 - `./deploy.sh --teardown --non-interactive` - Non-interactive mode, keeps machine and images for faster redeployment
 
-**Image Building:**
-- Routing sidecar: builds from `main` branch (v0.4.0-rc.1 tag doesn't exist in git)
-- EPP: builds from `v1.2.0-rc.1` tag with simple Dockerfile patch (`GOARCH=arm64`)
-- All images built with `--platform=linux/arm64` for Apple Silicon
+**Image Management:**
+- Pulls pre-built ARM64 images from Quay.io (`quay.io/petecheslock/...`)
+- Images built from llm-d v0.4.0 release components
+- KIND pulls images directly from Quay during deployment (no tar file loading needed)
+- To build your own images, use `./build-and-push-to-quay.sh`
 
 **Validation and Testing:**
 - Checks for required tools before starting
@@ -385,70 +422,77 @@ kubectl get pods -n istio-system
 kubectl get pods -n llm-d-monitoring
 ```
 
-### 5. Build ARM64 Images
+### 5. Pull ARM64 Images from Quay.io
 
-#### Build Routing Sidecar
-
-```bash
-cd /tmp
-git clone https://github.com/llm-d/llm-d-routing-sidecar.git
-cd llm-d-routing-sidecar
-
-# Use main branch (v0.4.0-rc.1 tag doesn't exist in git)
-git checkout main
-
-# Build ARM64 image
-podman build --platform=linux/arm64 \
-  -t localhost/llm-d-routing-sidecar:v0.4.0-rc.1-arm64 .
-```
-
-#### Build EPP
+The required images are pre-built and available on Quay.io:
 
 ```bash
-cd /tmp
-git clone https://github.com/kubernetes-sigs/gateway-api-inference-extension.git
-cd gateway-api-inference-extension
-
-# Checkout v1.2.0-rc.1 release tag
-git checkout v1.2.0-rc.1
-
-# Patch Dockerfile for ARM64 build
-# Simply change GOARCH from amd64 to arm64
-# Note: macOS sed requires '' after -i, Linux does not
-sed -i.bak 's/ENV GOARCH=amd64/ENV GOARCH=arm64/' Dockerfile
-
-# Build ARM64 image
-podman build --platform=linux/arm64 \
-  -t localhost/gateway-api-inference-extension-epp:v1.2.0-rc.1-arm64 .
+# Pull all required images
+podman pull quay.io/petecheslock/llm-d-routing-sidecar:v0.4.0-rc.1-arm64
+podman pull quay.io/petecheslock/gateway-api-inference-extension-epp:v1.2.0-rc.1-arm64
+podman pull quay.io/petecheslock/llm-d-cpu:v0.4.0-arm64
 ```
 
-#### Pull vLLM macOS Image
+> **Note:** These images are built from llm-d v0.4.0 release using `build-and-push-to-quay.sh`. The llm-d-cpu image uses vLLM commit c5f10cc139ec87e217f2bb56a677dd57394729f5 (v0.11.1+).
+
+**Building Images Yourself (Optional):**
+
+If you want to build and push your own images:
 
 ```bash
-podman pull quay.io/rh_ee_micyang/vllm-service:macos
+cd guides/cpu-inference-scheduling
+
+# Edit build-and-push-to-quay.sh to use your Quay username
+export QUAY_USERNAME=your-username
+
+# Build and push (takes 15-30 minutes for vLLM build)
+./build-and-push-to-quay.sh
+
+# Make images public in Quay.io web UI or configure imagePullSecrets
 ```
 
-### 6. Load Images into Kind
+#### Test a Container Locally (Optional)
+
+Test the llm-d-cpu container before deploying to Kubernetes:
 
 ```bash
-# Save images to tar files
-podman save localhost/llm-d-routing-sidecar:v0.4.0-rc.1-arm64 \
-  -o /tmp/routing-sidecar-arm64.tar
+# Run the container with Qwen2-0.5B-Instruct model
+podman run -d \
+  --name vllm-test \
+  -p 8200:8200 \
+  --entrypoint "" \
+  -e VLLM_TARGET_DEVICE=cpu \
+  -e VLLM_PLATFORM=cpu \
+  -e CUDA_VISIBLE_DEVICES="" \
+  -e VLLM_PORT=8200 \
+  quay.io/petecheslock/llm-d-cpu:v0.4.0-arm64 \
+  /bin/bash -c "
+    source /opt/venv/bin/activate && \
+    python3 -m vllm.entrypoints.openai.api_server \
+      --model Qwen/Qwen2-0.5B-Instruct \
+      --host 0.0.0.0 \
+      --port 8200 \
+      --dtype bfloat16 \
+      --max-model-len 2048 \
+      --disable-frontend-multiprocessing
+  "
 
-podman save localhost/gateway-api-inference-extension-epp:v1.2.0-rc.1-arm64 \
-  -o /tmp/epp-arm64.tar
+# Follow the logs (takes 2-5 minutes for model download)
+podman logs -f vllm-test
 
-podman save quay.io/rh_ee_micyang/vllm-service:macos \
-  -o /tmp/vllm-macos.tar
+# Test endpoints (in another terminal)
+curl -s http://localhost:8200/v1/models | jq
+curl -s http://localhost:8200/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "Qwen/Qwen2-0.5B-Instruct", "messages": [{"role": "user", "content": "Hello"}], "max_tokens": 20}' | jq
 
-# Load into kind cluster
-kind load image-archive /tmp/routing-sidecar-arm64.tar --name llm-d-cpu
-kind load image-archive /tmp/epp-arm64.tar --name llm-d-cpu
-kind load image-archive /tmp/vllm-macos.tar --name llm-d-cpu
-
-# Verify
-podman exec llm-d-cpu-control-plane crictl images | grep -E "routing-sidecar|epp|vllm"
+# Clean up
+podman stop vllm-test && podman rm vllm-test
 ```
+
+### 6. Deploy with Helm (KIND will pull from Quay)
+
+**No need to load images into KIND** - the deployment will pull them directly from Quay.io.
 
 ### 7. Deploy Helm Charts
 
@@ -531,10 +575,10 @@ resources:
     memory: 1Gi   # Minimal for scheduling
 ```
 
-**Total Resources** (1 replica):
-- Memory: ~8Gi (vLLM container + minimal sidecar overhead)
-- CPU: ~4 cores (vLLM container + minimal sidecar overhead)
-- Fits comfortably in 24GB podman machine with 8 CPUs and leaves plenty of headroom
+**Total Resources** (2 replicas):
+- Memory: ~20Gi (10Gi per replica × 2)
+- CPU: ~8 cores (4 per replica × 2)
+- Fits comfortably in 24GB podman machine with 8 CPUs
 
 ### Environment Variables
 
@@ -560,13 +604,15 @@ env:
 ```
 cpu-inference-scheduling/
 ├── README.md                           # This file
-├── deploy.sh                           # Automated deployment script
+├── deploy.sh                           # Automated deployment script (pulls from Quay)
+├── build-and-push-to-quay.sh          # Build and push images to Quay.io
+├── QUAY-WORKFLOW.md                   # Detailed Quay.io workflow guide
 ├── helmfile.yaml                       # Helm orchestration
 ├── httproute.yaml                      # Gateway routing configuration
 ├── gaie-inference-scheduling/
-│   └── values.yaml                    # EPP config with ARM64 image
+│   └── values.yaml                    # EPP config (Quay image reference)
 └── ms-inference-scheduling/
-    └── values.yaml                    # Model service config with Qwen2-0.5B
+    └── values.yaml                    # Model service config (Quay image reference)
 ```
 
 ## Troubleshooting
@@ -685,10 +731,10 @@ kind delete cluster --name llm-d-cpu
 podman machine stop
 podman machine rm -f podman-machine-default
 
-# Remove local images
-podman rmi localhost/llm-d-routing-sidecar:v0.4.0-rc.1-arm64
-podman rmi localhost/gateway-api-inference-extension-epp:v1.2.0-rc.1-arm64
-podman rmi quay.io/rh_ee_micyang/vllm-service:macos
+# Remove local images (they remain available in Quay.io)
+podman rmi quay.io/petecheslock/llm-d-routing-sidecar:v0.4.0-rc.1-arm64
+podman rmi quay.io/petecheslock/gateway-api-inference-extension-epp:v1.2.0-rc.1-arm64
+podman rmi quay.io/petecheslock/llm-d-cpu:v0.4.0-arm64
 ```
 
 ## Next Steps
