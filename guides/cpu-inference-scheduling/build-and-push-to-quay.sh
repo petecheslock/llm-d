@@ -10,9 +10,16 @@
 #   ./build-and-push-to-quay.sh
 #
 # Requirements:
+#   - macOS or Linux with Podman installed
 #   - Logged into Quay.io: podman login quay.io
-#   - Podman machine running
 #   - llm-d repository at v0.4.0 or compatible
+#
+# The script automatically:
+#   - Checks for required tools (podman, jq, git)
+#   - Initializes Podman machine if needed (macOS only, rootful mode)
+#   - Starts Podman machine if stopped
+#   - Builds all three container images
+#   - Pushes to your Quay.io account
 #######################################
 
 set -euo pipefail
@@ -57,6 +64,85 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}❌ $1${NC}"
+}
+
+check_prerequisites() {
+    log_info "Checking for required tools..."
+    
+    local missing_tools=()
+    
+    if ! command -v podman &> /dev/null; then
+        missing_tools+=("podman")
+    fi
+    
+    if ! command -v jq &> /dev/null; then
+        missing_tools+=("jq")
+    fi
+    
+    if ! command -v git &> /dev/null; then
+        missing_tools+=("git")
+    fi
+    
+    if [ ${#missing_tools[@]} -gt 0 ]; then
+        log_error "Missing required tools: ${missing_tools[*]}"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            log_info "Install with: brew install ${missing_tools[*]}"
+        fi
+        exit 1
+    fi
+    
+    log_success "All required tools are installed"
+}
+
+check_podman_machine() {
+    # Only needed on macOS
+    if [[ "$OSTYPE" != "darwin"* ]]; then
+        return 0
+    fi
+
+    log_info "Checking Podman machine status..."
+
+    # Check if any Podman machine exists
+    local machine_count=$(podman machine list --format json 2>/dev/null | jq '. | length' 2>/dev/null || echo "0")
+
+    if [ "$machine_count" = "0" ]; then
+        log_error "No Podman machine found"
+        log_info "Creating Podman machine for builds (4 CPUs, 8GB RAM, rootful mode)..."
+        
+        if ! podman machine init --cpus 4 --memory 8192 --disk-size 100 --rootful; then
+            log_error "Failed to initialize Podman machine"
+            exit 1
+        fi
+        
+        log_success "Podman machine initialized"
+    fi
+
+    # Check if machine is running
+    local running_count=$(podman machine list --format json 2>/dev/null | jq '[.[] | select(.Running==true)] | length' 2>/dev/null || echo "0")
+
+    if [ "$running_count" = "0" ]; then
+        log_info "Starting Podman machine..."
+        if ! podman machine start; then
+            log_error "Failed to start Podman machine"
+            exit 1
+        fi
+        log_success "Podman machine started"
+        sleep 3
+    else
+        log_success "Podman machine is already running"
+    fi
+
+    # Check if rootful mode is enabled
+    local rootful=$(podman machine inspect 2>/dev/null | jq -r '.[0].Rootful // false' 2>/dev/null || echo "false")
+    if [ "$rootful" != "true" ]; then
+        log_warn "Podman machine is not in rootful mode"
+        log_info "Switching to rootful mode (required for some builds)..."
+        podman machine stop
+        podman machine set --rootful
+        podman machine start
+        sleep 3
+        log_success "Podman machine now in rootful mode"
+    fi
 }
 
 check_quay_login() {
@@ -203,6 +289,12 @@ main() {
     echo ""
     
     # Check prerequisites
+    check_prerequisites
+    echo ""
+    
+    check_podman_machine
+    echo ""
+    
     check_quay_login
     echo ""
     

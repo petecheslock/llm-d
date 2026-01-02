@@ -442,13 +442,14 @@ $(if [[ -n "$WEB_TLS_CONFIG" ]]; then echo -e "$WEB_TLS_CONFIG"; fi)
     podMonitorSelector: {}
     podMonitorNamespaceSelector: {}
     maximumStartupDurationSeconds: 300
+    retention: 6h
     resources:
       limits:
-        memory: 8Gi
-        cpu: 4000m
+        memory: 2Gi
+        cpu: 2000m
       requests:
-        memory: 4Gi
-        cpu: 1000m
+        memory: 1Gi
+        cpu: 500m
 $(if [[ -n "$DISABLE_PROMETHEUS_OPERATOR" ]]; then echo -e "$DISABLE_PROMETHEUS_OPERATOR"; fi)
 $(if [[ -n "$DISABLE_NODE_EXPORTER" ]]; then echo -e "$DISABLE_NODE_EXPORTER"; fi)
 EOF
@@ -500,12 +501,13 @@ $(if [[ -n "$WEB_TLS_CONFIG" ]]; then echo -e "$WEB_TLS_CONFIG"; fi)
       matchLabels:
         ${MONITORING_LABEL_KEY}: "${MONITORING_LABEL_VALUE}"
     maximumStartupDurationSeconds: 300
+    retention: 6h
     resources:
       limits:
-        memory: 4Gi
-        cpu: 2000m
-      requests:
         memory: 2Gi
+        cpu: 1000m
+      requests:
+        memory: 1Gi
         cpu: 500m
 $(if [[ -n "$DISABLE_PROMETHEUS_OPERATOR" ]]; then echo -e "$DISABLE_PROMETHEUS_OPERATOR"; fi)
 $(if [[ -n "$DISABLE_NODE_EXPORTER" ]]; then echo -e "$DISABLE_NODE_EXPORTER"; fi)

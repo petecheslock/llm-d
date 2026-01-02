@@ -11,17 +11,17 @@ This guide explains how to build llm-d v0.4.0 containers locally and push them t
 - ✅ Version control and image history via Quay UI
 - ✅ Can make images public for others to use
 
-**Current Approach (Local + KIND):**
-- Build images locally with podman
-- Save to tar files
-- Load tar files into KIND cluster
-- Images only available in that specific KIND cluster
-
-**Quay Approach:**
-- Build images locally with podman
+**Current Approach (Registry-based):**
+- Build images locally with docker/podman
 - Push to Quay.io registry
-- KIND pulls images from Quay (like any other registry)
+- Minikube pulls images from Quay (like any other registry)
 - Images available to any cluster with registry access
+
+**Why this is better:**
+- No need to load images into cluster manually
+- Works across different Kubernetes distributions (Minikube, kind, k3s, etc.)
+- Images can be shared with other users
+- Version control and image history via Quay UI
 
 ## Prerequisites
 
@@ -122,51 +122,23 @@ routing:
     imagePullPolicy: IfNotPresent
 ```
 
-### Step 5: Update deploy.sh (Optional)
+### Step 5: Deploy
 
-Modify `deploy.sh` to use Quay images instead of building locally. Replace the `build_arm64_images()` and `load_images_into_kind()` functions with:
-
-```bash
-verify_quay_images() {
-    log_info "Verifying Quay images are available..."
-    
-    local images=(
-        "quay.io/petecheslock/llm-d-routing-sidecar:v0.4.0-rc.1-arm64"
-        "quay.io/petecheslock/gateway-api-inference-extension-epp:v1.2.0-rc.1-arm64"
-        "quay.io/petecheslock/llm-d-cpu:v0.4.0-arm64"
-    )
-    
-    for img in "${images[@]}"; do
-        if ! podman pull "$img" --quiet; then
-            log_error "Failed to pull $img from Quay"
-            log_error "Make sure you've run: ./build-and-push-to-quay.sh"
-            log_error "And made the images public in Quay.io settings"
-            exit 1
-        fi
-        log_success "Verified: $img"
-    done
-}
-```
-
-Then in the `deploy_all()` function, replace steps 7-8 with:
+The `deploy.sh` script already includes Quay image verification:
 
 ```bash
-# Step 7: Verify Quay images
-verify_quay_images
-echo ""
-# (Remove step 8 - no longer need to load into kind)
+# The script automatically:
+# 1. Verifies images are accessible in Quay.io
+# 2. Minikube pulls images directly during deployment
+# 3. No manual image loading needed
 ```
-
-KIND will now pull images directly from Quay.io when deploying.
-
-### Step 6: Deploy
 
 ```bash
 # Deploy with Quay images
 ./deploy.sh
 ```
 
-KIND will automatically pull the images from Quay.io during deployment.
+Minikube will automatically pull the images from Quay.io during deployment.
 
 ## Workflow Summary
 

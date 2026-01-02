@@ -1,11 +1,12 @@
-# Optimized CPU configuration for Apple Silicon MacBook using Qwen2-0.5B-Instruct
-# This configuration uses a small instruction-tuned model for chat/completion
+# Optimized CPU configuration using SmolLM2-360M-Instruct
+# This configuration uses a small instruction-tuned model with 4K context for chat/completion
+# Memory allocation: 6Gi per replica (2 replicas = 12Gi total for model serving)
 
 modelArtifacts:
-  uri: "hf://Qwen/Qwen2-0.5B-Instruct"
-  size: 2Gi
-  authSecretName: ""  # Qwen2 is public, no auth needed
-  name: "Qwen/Qwen2-0.5B-Instruct"
+  uri: "hf://HuggingFaceTB/SmolLM2-360M-Instruct"
+  size: 1Gi
+  authSecretName: ""  # SmolLM2 is public, no auth needed
+  name: "HuggingFaceTB/SmolLM2-360M-Instruct"
 
 accelerator:
   type: cpu
@@ -42,7 +43,7 @@ decode:
       - "vllm.entrypoints.openai.api_server"
     args:
       - "--model"
-      - "Qwen/Qwen2-0.5B-Instruct"
+      - "HuggingFaceTB/SmolLM2-360M-Instruct"
       - "--host"
       - "0.0.0.0"
       - "--port"
@@ -50,9 +51,9 @@ decode:
       - "--dtype"
       - "bfloat16"
       - "--max-model-len"
-      - "16384"
+      - "4096"
       - "--max-num-batched-tokens"
-      - "16384"
+      - "4096"
       - "--disable-frontend-multiprocessing"
     securityContext:
       seccompProfile:
@@ -64,7 +65,7 @@ decode:
       - name: VLLM_TARGET_DEVICE
         value: "cpu"
       - name: VLLM_CPU_KVCACHE_SPACE
-        value: "7"
+        value: "1"  # Reduced from 2 to 1GB to reduce memory pressure
       - name: VLLM_CPU_OMP_THREADS_BIND
         value: "auto"
     ports:
@@ -73,11 +74,11 @@ decode:
         protocol: TCP
     resources:
       limits:
-        memory: 10Gi
+        memory: 6Gi  # Increased: 1.5GB model + 2GB KV cache + 2.5GB overhead/safety margin
         cpu: "4"
       requests:
         cpu: "500m"   # Minimal request for scheduling
-        memory: 1Gi   # Minimal memory request
+        memory: 2Gi    # Increased to ensure scheduling with sufficient memory
     device: "cpu"
     mountModelVolume: true
     volumeMounts:
@@ -89,10 +90,10 @@ decode:
       httpGet:
         path: /health
         port: 8200
-      initialDelaySeconds: 300
+      initialDelaySeconds: 180
       periodSeconds: 30
       timeoutSeconds: 10
-      failureThreshold: 80
+      failureThreshold: 60
     livenessProbe:
       httpGet:
         path: /health
