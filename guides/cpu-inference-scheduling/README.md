@@ -708,7 +708,7 @@ Key vLLM parameters:
 ```yaml
 resources:
   limits:
-    memory: 6Gi   # Model (~1.5Gi) + KV cache (1GB) + vLLM overhead (~3.5Gi)
+    memory: 6Gi   # Model (720MB) + loading overhead (800MB) + KV cache (100MB) + vLLM/PyTorch (~2.5Gi) + safety margin (~1.8Gi)
     cpu: "4"      # 4 CPUs per pod
   requests:
     cpu: "500m"   # Minimal for scheduling
@@ -718,9 +718,9 @@ resources:
 **Memory Breakdown (per pod):**
 - Model weights (bfloat16): ~720MB (360M params × 2 bytes)
 - Model loading overhead: ~800MB
-- KV cache: 1GB (VLLM_CPU_KVCACHE_SPACE=1)
+- KV cache: 100MB (--kv-cache-memory-bytes 104857600)
 - vLLM runtime + PyTorch: ~2-2.5GB
-- Safety margin: ~1GB
+- Safety margin: ~1.8-2.7GB
 - **Total: 6Gi**
 
 **Total Resources** (2 replicas):
@@ -735,10 +735,9 @@ Critical vLLM CPU configuration:
 env:
   - name: VLLM_TARGET_DEVICE
     value: "cpu"
-  - name: VLLM_CPU_KVCACHE_SPACE
-    value: "1"  # 1GB KV cache (reduced to minimize memory pressure)
   - name: VLLM_CPU_OMP_THREADS_BIND
     value: "auto"
+# Note: KV cache is configured via --kv-cache-memory-bytes arg (100MB) instead of VLLM_CPU_KVCACHE_SPACE env var
 ```
 
 ## File Structure
@@ -823,9 +822,10 @@ minikube start -p llm-d-cpu \
 **Solution 3: Reduce KV Cache**:
 ```yaml
 # In ms-inference-scheduling/values.yaml
-env:
-  - name: VLLM_CPU_KVCACHE_SPACE
-    value: "0"  # Disable KV cache or reduce to 0.5GB
+args:
+  # Change --kv-cache-memory-bytes to a smaller value or 0
+  - "--kv-cache-memory-bytes"
+  - "52428800"  # Reduce to 50MB instead of 100MB
 ```
 
 **Solution 4: Reduce to 1 Replica** (if testing):

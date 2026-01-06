@@ -1,12 +1,12 @@
-# Optimized CPU configuration using SmolLM2-360M-Instruct
-# This configuration uses a small instruction-tuned model with 4K context for chat/completion
-# Memory allocation: 6Gi per replica (2 replicas = 12Gi total for model serving)
+# Optimized CPU configuration using TinyLlama-1.1B-Chat-v1.0
+# This configuration uses a 1.1B parameter instruction-tuned model with 2K context for chat/completion
+# Memory allocation: 8Gi per replica (2 replicas = 16Gi total for model serving)
 
 modelArtifacts:
-  uri: "hf://HuggingFaceTB/SmolLM2-360M-Instruct"
-  size: 1Gi
-  authSecretName: ""  # SmolLM2 is public, no auth needed
-  name: "HuggingFaceTB/SmolLM2-360M-Instruct"
+  uri: "hf://TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+  size: 4Gi  # Model + tokenizer + config files need ~3GB, setting 4Gi for safety
+  authSecretName: ""  # TinyLlama is public, no auth needed
+  name: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
 accelerator:
   type: cpu
@@ -43,7 +43,7 @@ decode:
       - "vllm.entrypoints.openai.api_server"
     args:
       - "--model"
-      - "HuggingFaceTB/SmolLM2-360M-Instruct"
+      - "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
       - "--host"
       - "0.0.0.0"
       - "--port"
@@ -51,9 +51,11 @@ decode:
       - "--dtype"
       - "bfloat16"
       - "--max-model-len"
-      - "4096"
+      - "2048"  # 2K context (max supported by TinyLlama)
       - "--max-num-batched-tokens"
-      - "4096"
+      - "2048"  # Match max-model-len
+      - "--kv-cache-memory-bytes"
+      - "104857600"  # 100MB in bytes (minimal for testing)
       - "--disable-frontend-multiprocessing"
     securityContext:
       seccompProfile:
@@ -64,8 +66,7 @@ decode:
     env:
       - name: VLLM_TARGET_DEVICE
         value: "cpu"
-      - name: VLLM_CPU_KVCACHE_SPACE
-        value: "1"  # Reduced from 2 to 1GB to reduce memory pressure
+      # VLLM_CPU_KVCACHE_SPACE removed - using --kv-cache-memory-bytes arg instead for finer control
       - name: VLLM_CPU_OMP_THREADS_BIND
         value: "auto"
     ports:
@@ -74,11 +75,11 @@ decode:
         protocol: TCP
     resources:
       limits:
-        memory: 6Gi  # Increased: 1.5GB model + 2GB KV cache + 2.5GB overhead/safety margin
+        memory: 8Gi  # 2.2GB model + 100MB KV cache + 2.5GB vLLM/PyTorch + 3GB compilation overhead + 0.2GB safety margin
         cpu: "4"
       requests:
         cpu: "500m"   # Minimal request for scheduling
-        memory: 2Gi    # Increased to ensure scheduling with sufficient memory
+        memory: 3Gi    # Sufficient for model loading phase
     device: "cpu"
     mountModelVolume: true
     volumeMounts:
@@ -90,10 +91,10 @@ decode:
       httpGet:
         path: /health
         port: 8200
-      initialDelaySeconds: 180
+      initialDelaySeconds: 300  # 5 minutes - increased for slow CPU compilation
       periodSeconds: 30
       timeoutSeconds: 10
-      failureThreshold: 60
+      failureThreshold: 80  # Increased to allow more time
     livenessProbe:
       httpGet:
         path: /health
